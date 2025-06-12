@@ -3,28 +3,22 @@ package email
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/mail"
+	"net/smtp"
+	"strings"
 	"sync"
 	"time"
 )
 
-func New(conf *ConfVerifier) (*verifier, error) {
-	v := &verifier{
-		conf: conf,
-		mu:   &sync.RWMutex{},
-		tk:   time.NewTicker(1 * time.Hour),
-	}
-	v.ctx, v.cancel = context.WithCancel(context.TODO())
-	if conf.CheckDisposableDomains {
-		disposableDomains, err := getDisposableDomains()
-		if err != nil {
-			return nil, err
-		}
-		v.disposableDomains = disposableDomains
-		go v.loop()
-	}
-	return v, nil
+func init() {
+	mu = &sync.RWMutex{}
+	tk = time.NewTicker(1 * time.Hour)
+	disposableDomains, _ = getDisposableDomains()
+	go loop()
 }
 
 func getDisposableDomains() (map[string]struct{}, error) {
@@ -53,4 +47,74 @@ func getDisposableDomains() (map[string]struct{}, error) {
 		disposableDomains[domain] = struct{}{}
 	}
 	return disposableDomains, nil
+}
+
+func loop() {
+	for range tk.C {
+		refresh()
+	}
+}
+
+func refresh() error {
+	domains, err := getDisposableDomains()
+	if err != nil {
+		return err
+	}
+	mu.Lock()
+	disposableDomains = domains
+	mu.Unlock()
+	return nil
+}
+
+func Verify(input string) (bool, error) {
+	email, err := mail.ParseAddress(input)
+	if err != nil {
+		return false, err
+	}
+	i := strings.LastIndex(email.Address, "@")
+	if i < 0 || i == len(email.Address)-1 {
+		return false, ErrInvalidSyntax
+	}
+	domain := email.Address[i+1:]
+	mu.RLock()
+	_, ok := disposableDomains[domain]
+	mu.RUnlock()
+	if ok {
+		return false, ErrDisposableEmail
+	}
+	_, err = net.LookupNS(domain)
+	if err != nil {
+		return false, err
+	}
+	records, err := net.LookupMX(domain)
+	if err != nil {
+		return false, err
+	}
+	if len(records) < 1 {
+		return false, ErrNoMXRecords
+	}
+	host := records[0].Host
+	pref := records[0].Pref
+	for _, record := range records {
+		if record.Pref >= pref {
+			continue
+		}
+		pref = record.Pref
+		host = record.Host
+	}
+	addr := fmt.Sprintf("%[1]s:%[2]d", host, smtpPort)
+	client, err := smtp.Dial(addr)
+	if err != nil {
+		return false, err
+	}
+	defer client.Close()
+	err = client.Mail(fromEmail)
+	if err != nil {
+		return false, err
+	}
+	err = client.Rcpt(input)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
