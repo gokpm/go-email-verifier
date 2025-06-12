@@ -18,11 +18,13 @@ func (v *verifier) Verify(input string) (bool, error) {
 		return false, ErrInvalidSyntax
 	}
 	domain := email.Address[i+1:]
-	v.mu.RLock()
-	_, ok := v.disposableDomains[domain]
-	v.mu.RUnlock()
-	if ok {
-		return false, ErrDisposableEmail
+	if v.conf.CheckDisposableDomains {
+		v.mu.RLock()
+		_, ok := v.disposableDomains[domain]
+		v.mu.RUnlock()
+		if ok {
+			return false, ErrDisposableEmail
+		}
 	}
 	_, err = net.LookupNS(domain)
 	if err != nil {

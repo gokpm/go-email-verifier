@@ -12,7 +12,12 @@ const (
 	smtpPort             = 25
 )
 
+type ConfVerifier struct {
+	CheckDisposableDomains bool
+}
+
 type verifier struct {
+	conf              *ConfVerifier
 	mu                *sync.RWMutex
 	tk                *time.Ticker
 	ctx               context.Context

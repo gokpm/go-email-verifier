@@ -9,18 +9,21 @@ import (
 	"time"
 )
 
-func New() (*verifier, error) {
+func New(conf *ConfVerifier) (*verifier, error) {
 	v := &verifier{
-		mu: &sync.RWMutex{},
-		tk: time.NewTicker(1 * time.Hour),
+		conf: conf,
+		mu:   &sync.RWMutex{},
+		tk:   time.NewTicker(1 * time.Hour),
 	}
 	v.ctx, v.cancel = context.WithCancel(context.TODO())
-	disposableDomains, err := getDisposableDomains()
-	if err != nil {
-		return nil, err
+	if conf.CheckDisposableDomains {
+		disposableDomains, err := getDisposableDomains()
+		if err != nil {
+			return nil, err
+		}
+		v.disposableDomains = disposableDomains
+		go v.loop()
 	}
-	v.disposableDomains = disposableDomains
-	go v.loop()
 	return v, nil
 }
 
