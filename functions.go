@@ -66,7 +66,7 @@ func refresh() error {
 	return nil
 }
 
-func Verify(input string) (bool, error) {
+func Verify(input string, conf *Conf) (bool, error) {
 	email, err := mail.ParseAddress(input)
 	if err != nil {
 		return false, err
@@ -76,15 +76,19 @@ func Verify(input string) (bool, error) {
 		return false, ErrInvalidSyntax
 	}
 	domain := email.Address[i+1:]
-	mu.RLock()
-	_, ok := disposableDomains[domain]
-	mu.RUnlock()
-	if ok {
-		return false, ErrDisposableEmail
+	if conf.CheckDisposableDomains {
+		mu.RLock()
+		_, ok := disposableDomains[domain]
+		mu.RUnlock()
+		if ok {
+			return false, ErrDisposableEmail
+		}
 	}
-	_, err = net.LookupNS(domain)
-	if err != nil {
-		return false, err
+	if conf.CheckNS {
+		_, err = net.LookupNS(domain)
+		if err != nil {
+			return false, err
+		}
 	}
 	records, err := net.LookupMX(domain)
 	if err != nil {

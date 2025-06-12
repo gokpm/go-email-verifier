@@ -11,6 +11,11 @@ const (
 	smtpPort             = 25
 )
 
+type Conf struct {
+	CheckDisposableDomains bool
+	CheckNS                bool
+}
+
 var mu *sync.RWMutex
 var disposableDomains map[string]struct{}
 var tk *time.Ticker
