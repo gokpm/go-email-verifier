@@ -66,14 +66,35 @@ func refresh() error {
 	return nil
 }
 
-func Verify(input string, conf *Conf) (bool, error) {
+func Verify(ctx context.Context, input string, conf *Conf) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case err := <-verifyWithTimeout(input, conf):
+		if err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func verifyWithTimeout(input string, conf *Conf) chan error {
+	ch := make(chan error, 1)
+	go verifyWithChannel(ch, input, conf)
+	return ch
+}
+
+func verifyWithChannel(ch chan error, input string, conf *Conf) {
+	defer close(ch)
 	email, err := mail.ParseAddress(input)
 	if err != nil {
-		return false, err
+		ch <- err
+		return
 	}
 	i := strings.LastIndex(email.Address, "@")
 	if i < 0 || i == len(email.Address)-1 {
-		return false, ErrInvalidSyntax
+		ch <- ErrInvalidSyntax
+		return
 	}
 	domain := email.Address[i+1:]
 	if conf.CheckDisposableDomains {
@@ -81,21 +102,25 @@ func Verify(input string, conf *Conf) (bool, error) {
 		_, ok := disposableDomains[domain]
 		mu.RUnlock()
 		if ok {
-			return false, ErrDisposableEmail
+			ch <- ErrDisposableEmail
+			return
 		}
 	}
 	if conf.CheckNS {
 		_, err = net.LookupNS(domain)
 		if err != nil {
-			return false, err
+			ch <- err
+			return
 		}
 	}
 	records, err := net.LookupMX(domain)
 	if err != nil {
-		return false, err
+		ch <- err
+		return
 	}
 	if len(records) < 1 {
-		return false, ErrNoMXRecords
+		ch <- ErrNoMXRecords
+		return
 	}
 	host := records[0].Host
 	pref := records[0].Pref
@@ -109,16 +134,18 @@ func Verify(input string, conf *Conf) (bool, error) {
 	addr := fmt.Sprintf("%[1]s:%[2]d", host, smtpPort)
 	client, err := smtp.Dial(addr)
 	if err != nil {
-		return false, err
+		ch <- err
+		return
 	}
 	defer client.Close()
 	err = client.Mail(fromEmail)
 	if err != nil {
-		return false, err
+		ch <- err
+		return
 	}
 	err = client.Rcpt(input)
 	if err != nil {
-		return false, err
+		ch <- err
+		return
 	}
-	return true, nil
 }
