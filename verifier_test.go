@@ -179,7 +179,7 @@ func TestVerifyDisposableAllowed(t *testing.T) {
 	defer cancel()
 
 	// This should pass even if it's a disposable domain
-	ok, err := Verify(ctx, "test@10minutemail.com", conf)
+	ok, err := Verify(ctx, "test@zoparel.com", conf)
 	// Note: This might still fail due to DNS issues, but shouldn't fail due to disposable check
 	if err == ErrDisposableEmail {
 		t.Fatal("Got ErrDisposableEmail when BlockDisposable is false")
