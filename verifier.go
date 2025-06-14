@@ -21,9 +21,11 @@ const (
 	smtpPort             = 25
 )
 
-type Conf struct {
-	ValidNS       bool
-	NonDisposable bool
+type Config struct {
+	ValidateMX      bool
+	ValidateSMTP    bool
+	ValidateDNS     bool
+	BlockDisposable bool
 }
 
 var mu *sync.RWMutex
@@ -88,7 +90,7 @@ func refresh() error {
 	return nil
 }
 
-func Verify(ctx context.Context, input string, conf *Conf) (bool, error) {
+func Verify(ctx context.Context, input string, conf *Config) (bool, error) {
 	select {
 	case <-ctx.Done():
 		return false, ctx.Err()
@@ -100,13 +102,13 @@ func Verify(ctx context.Context, input string, conf *Conf) (bool, error) {
 	return true, nil
 }
 
-func verifyWithTimeout(input string, conf *Conf) chan error {
+func verifyWithTimeout(input string, conf *Config) chan error {
 	ch := make(chan error, 1)
 	go verifyWithChannel(ch, input, conf)
 	return ch
 }
 
-func verifyWithChannel(ch chan error, input string, conf *Conf) {
+func verifyWithChannel(ch chan error, input string, conf *Config) {
 	defer close(ch)
 	email, err := mail.ParseAddress(input)
 	if err != nil {
@@ -119,7 +121,7 @@ func verifyWithChannel(ch chan error, input string, conf *Conf) {
 		return
 	}
 	domain := email.Address[i+1:]
-	if conf.NonDisposable {
+	if conf.BlockDisposable {
 		mu.RLock()
 		_, ok := disposableDomains[domain]
 		mu.RUnlock()
@@ -128,46 +130,50 @@ func verifyWithChannel(ch chan error, input string, conf *Conf) {
 			return
 		}
 	}
-	if conf.ValidNS {
+	if conf.ValidateDNS {
 		_, err = net.LookupNS(domain)
 		if err != nil {
 			ch <- err
 			return
 		}
 	}
-	records, err := net.LookupMX(domain)
-	if err != nil {
-		ch <- err
-		return
-	}
-	if len(records) < 1 {
-		ch <- ErrNoMXRecords
-		return
-	}
-	host := records[0].Host
-	pref := records[0].Pref
-	for _, record := range records {
-		if record.Pref >= pref {
-			continue
+	if conf.ValidateMX || conf.ValidateSMTP {
+		records, err := net.LookupMX(domain)
+		if err != nil {
+			ch <- err
+			return
 		}
-		pref = record.Pref
-		host = record.Host
-	}
-	addr := fmt.Sprintf("%[1]s:%[2]d", host, smtpPort)
-	client, err := smtp.Dial(addr)
-	if err != nil {
-		ch <- err
-		return
-	}
-	defer client.Close()
-	err = client.Mail(fromEmail)
-	if err != nil {
-		ch <- err
-		return
-	}
-	err = client.Rcpt(input)
-	if err != nil {
-		ch <- err
-		return
+		if len(records) < 1 {
+			ch <- ErrNoMXRecords
+			return
+		}
+		if conf.ValidateSMTP {
+			host := records[0].Host
+			pref := records[0].Pref
+			for _, record := range records {
+				if record.Pref >= pref {
+					continue
+				}
+				pref = record.Pref
+				host = record.Host
+			}
+			addr := fmt.Sprintf("%[1]s:%[2]d", host, smtpPort)
+			client, err := smtp.Dial(addr)
+			if err != nil {
+				ch <- err
+				return
+			}
+			defer client.Close()
+			err = client.Mail(fromEmail)
+			if err != nil {
+				ch <- err
+				return
+			}
+			err = client.Rcpt(input)
+			if err != nil {
+				ch <- err
+				return
+			}
+		}
 	}
 }

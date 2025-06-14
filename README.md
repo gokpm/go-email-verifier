@@ -1,15 +1,13 @@
-# Email Verifier
+**# Email Verifier**
 
 Go package for email address verification with disposable domain detection, DNS validation, and SMTP verification.
 
-## Installation
-
+**## Installation**
 ```bash
-go get github.com/gokpm/go-email-verifier
+go get github.com/gokpm/verifier
 ```
 
-## Usage
-
+**## Usage**
 ```go
 package main
 
@@ -17,20 +15,21 @@ import (
     "context"
     "fmt"
     "time"
-    
-    "github.com/gokpm/go-email-verifier"
+    "github.com/gokpm/verifier"
 )
 
 func main() {
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
     
-    conf := &Conf{
-		ValidNS:       true,
-		NonDisposable: true,
-	}
+    conf := Config{
+        ValidateDNS:      true,
+        ValidateMX:       true,
+        ValidateSMTP:     true,
+        BlockDisposable:  true,
+    }
     
-    isValid, err := verifier.Verify(ctx, "user@example.com", config)
+    isValid, err := verifier.Verify(ctx, "user@example.com", conf)
     if err != nil {
         fmt.Printf("Error: %v\n", err)
         return
@@ -40,23 +39,22 @@ func main() {
 }
 ```
 
-## Configuration
-
+**## Configuration**
 ```go
-type Conf struct {
-    ValidNS               bool  // Verify domain NS records
-    NonDisposable         bool  // Check against disposable email domains
+type Config struct {
+    ValidateMX       bool // Check MX records exist
+    ValidateSMTP     bool // Test SMTP server connectivity
+    ValidateDNS      bool // Verify domain NS records
+    BlockDisposable  bool // Check against disposable email domains
 }
 ```
 
-## Errors
-
+**## Errors**
 - `ErrInvalidSyntax`: Invalid email format
-- `ErrDisposableEmail`: Disposable domain detected
+- `ErrDisposableEmail`: Disposable domain detected  
 - `ErrNoMXRecords`: No MX records found
 
-## Features
-
+**## Features**
 - Syntax validation
 - Disposable domain checking (auto-updated hourly)
 - DNS/MX record validation

@@ -9,9 +9,11 @@ import (
 func TestVerify(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
 	defer cancel()
-	conf := &Conf{
-		ValidNS:       true,
-		NonDisposable: true,
+	conf := &Config{
+		ValidateMX:      true,
+		ValidateSMTP:    true,
+		ValidateDNS:     true,
+		BlockDisposable: true,
 	}
 	ok, err := Verify(ctx, "mail.gokulpm@gmail.com", conf)
 	if err != nil {
@@ -25,9 +27,11 @@ func TestVerify(t *testing.T) {
 func TestVerifyDisposableDomain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
 	defer cancel()
-	conf := &Conf{
-		ValidNS:       true,
-		NonDisposable: true,
+	conf := &Config{
+		ValidateMX:      true,
+		ValidateSMTP:    true,
+		ValidateDNS:     true,
+		BlockDisposable: true,
 	}
 	ok, err := Verify(ctx, "mail.gokulpm@0uxpgdvol9n.gq", conf)
 	if err != ErrDisposableEmail {
