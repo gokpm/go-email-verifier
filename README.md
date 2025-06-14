@@ -25,10 +25,10 @@ func main() {
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
     
-    config := verifier.Conf{
-        CheckDisposableDomains: true,
-        CheckNS:               true,
-    }
+    conf := &Conf{
+		ValidNS:       true,
+		NonDisposable: true,
+	}
     
     isValid, err := verifier.Verify(ctx, "user@example.com", config)
     if err != nil {
@@ -44,8 +44,8 @@ func main() {
 
 ```go
 type Conf struct {
-    CheckDisposableDomains bool  // Check against disposable email domains
-    CheckNS               bool  // Verify domain NS records
+    ValidNS               bool  // Verify domain NS records
+    NonDisposable         bool  // Check against disposable email domains
 }
 ```
 

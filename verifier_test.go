@@ -9,7 +9,10 @@ import (
 func TestVerify(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
 	defer cancel()
-	conf := &Conf{CheckDisposableDomains: true, CheckNS: true}
+	conf := &Conf{
+		ValidNS:       true,
+		NonDisposable: true,
+	}
 	ok, err := Verify(ctx, "mail.gokulpm@gmail.com", conf)
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +25,10 @@ func TestVerify(t *testing.T) {
 func TestVerifyDisposableDomain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
 	defer cancel()
-	conf := &Conf{CheckDisposableDomains: true, CheckNS: true}
+	conf := &Conf{
+		ValidNS:       true,
+		NonDisposable: true,
+	}
 	ok, err := Verify(ctx, "mail.gokulpm@0uxpgdvol9n.gq", conf)
 	if err != ErrDisposableEmail {
 		t.Fatal(err)

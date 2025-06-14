@@ -22,8 +22,8 @@ const (
 )
 
 type Conf struct {
-	CheckDisposableDomains bool
-	CheckNS                bool
+	ValidNS       bool
+	NonDisposable bool
 }
 
 var mu *sync.RWMutex
@@ -119,7 +119,7 @@ func verifyWithChannel(ch chan error, input string, conf *Conf) {
 		return
 	}
 	domain := email.Address[i+1:]
-	if conf.CheckDisposableDomains {
+	if conf.NonDisposable {
 		mu.RLock()
 		_, ok := disposableDomains[domain]
 		mu.RUnlock()
@@ -128,7 +128,7 @@ func verifyWithChannel(ch chan error, input string, conf *Conf) {
 			return
 		}
 	}
-	if conf.CheckNS {
+	if conf.ValidNS {
 		_, err = net.LookupNS(domain)
 		if err != nil {
 			ch <- err
