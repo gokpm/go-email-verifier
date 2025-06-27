@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gokpm/go-sig"
 )
 
 const (
@@ -48,22 +50,28 @@ func init() {
 func getDisposableDomains() (map[string]struct{}, error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
 	defer cancel()
+	log := sig.Start(ctx)
+	defer log.End()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, disposableDomainsURL, nil)
 	if err != nil {
+		log.Error(err)
 		return nil, err
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
+		log.Error(err)
 		return nil, err
 	}
 	defer response.Body.Close()
 	bytes, err := io.ReadAll(response.Body)
 	if err != nil {
+		log.Error(err)
 		return nil, err
 	}
 	domains := []string{}
 	err = json.Unmarshal(bytes, &domains)
 	if err != nil {
+		log.Error(err)
 		return nil, err
 	}
 	disposableDomains := map[string]struct{}{}
@@ -80,8 +88,11 @@ func loop() {
 }
 
 func refresh() error {
+	log := sig.Start(context.TODO())
+	defer log.End()
 	domains, err := getDisposableDomains()
 	if err != nil {
+		log.Error(err)
 		return err
 	}
 	mu.Lock()
@@ -91,32 +102,43 @@ func refresh() error {
 }
 
 func Verify(ctx context.Context, input string, conf *Config) (bool, error) {
+	log := sig.Start(ctx)
+	defer log.End()
 	select {
 	case <-ctx.Done():
-		return false, ctx.Err()
-	case err := <-verifyWithTimeout(input, conf):
+		err := ctx.Err()
+		log.Error(err)
+		return false, err
+	case err := <-verifyWithTimeout(log.Ctx(), input, conf):
 		if err != nil {
+			log.Error(err)
 			return false, err
 		}
 	}
 	return true, nil
 }
 
-func verifyWithTimeout(input string, conf *Config) chan error {
+func verifyWithTimeout(ctx context.Context, input string, conf *Config) chan error {
+	log := sig.Start(ctx)
+	defer log.End()
 	ch := make(chan error, 1)
-	go verifyWithChannel(ch, input, conf)
+	go verifyWithChannel(log.Ctx(), ch, input, conf)
 	return ch
 }
 
-func verifyWithChannel(ch chan error, input string, conf *Config) {
+func verifyWithChannel(ctx context.Context, ch chan error, input string, conf *Config) {
+	log := sig.Start(ctx)
+	defer log.End()
 	defer close(ch)
 	email, err := mail.ParseAddress(input)
 	if err != nil {
+		log.Error(err)
 		ch <- err
 		return
 	}
 	i := strings.LastIndex(email.Address, "@")
 	if i < 0 || i == len(email.Address)-1 {
+		log.Error(ErrInvalidSyntax)
 		ch <- ErrInvalidSyntax
 		return
 	}
@@ -126,6 +148,7 @@ func verifyWithChannel(ch chan error, input string, conf *Config) {
 		_, ok := disposableDomains[domain]
 		mu.RUnlock()
 		if ok {
+			log.Error(ErrDisposableEmail)
 			ch <- ErrDisposableEmail
 			return
 		}
@@ -133,6 +156,7 @@ func verifyWithChannel(ch chan error, input string, conf *Config) {
 	if conf.ValidateDNS {
 		_, err = net.LookupNS(domain)
 		if err != nil {
+			log.Error(err)
 			ch <- err
 			return
 		}
@@ -140,10 +164,12 @@ func verifyWithChannel(ch chan error, input string, conf *Config) {
 	if conf.ValidateMX || conf.ValidateSMTP {
 		records, err := net.LookupMX(domain)
 		if err != nil {
+			log.Error(err)
 			ch <- err
 			return
 		}
 		if len(records) < 1 {
+			log.Error(ErrNoMXRecords)
 			ch <- ErrNoMXRecords
 			return
 		}
@@ -160,17 +186,20 @@ func verifyWithChannel(ch chan error, input string, conf *Config) {
 			addr := fmt.Sprintf("%[1]s:%[2]d", host, smtpPort)
 			client, err := smtp.Dial(addr)
 			if err != nil {
+				log.Error(err)
 				ch <- err
 				return
 			}
 			defer client.Close()
 			err = client.Mail(fromEmail)
 			if err != nil {
+				log.Error(err)
 				ch <- err
 				return
 			}
 			err = client.Rcpt(input)
 			if err != nil {
+				log.Error(err)
 				ch <- err
 				return
 			}
