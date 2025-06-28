@@ -33,6 +33,9 @@ type Config struct {
 var mu *sync.RWMutex
 var disposableDomains map[string]struct{}
 var tk *time.Ticker
+var resolver = &net.Resolver{}
+var dialer = &net.Dialer{}
+var timeout = 30 * time.Second
 
 var (
 	ErrInvalidSyntax   = errors.New("invalid syntax")
@@ -48,7 +51,7 @@ func init() {
 }
 
 func getDisposableDomains() (map[string]struct{}, error) {
-	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
 	defer cancel()
 	log := sig.Start(ctx)
 	defer log.End()
@@ -104,43 +107,15 @@ func refresh() error {
 func Verify(ctx context.Context, input string, conf *Config) (bool, error) {
 	log := sig.Start(ctx)
 	defer log.End()
-	select {
-	case <-ctx.Done():
-		err := ctx.Err()
-		log.Error(err)
-		return false, err
-	case err := <-verifyWithTimeout(log.Ctx(), input, conf):
-		if err != nil {
-			log.Error(err)
-			return false, err
-		}
-	}
-	return true, nil
-}
-
-func verifyWithTimeout(ctx context.Context, input string, conf *Config) chan error {
-	log := sig.Start(ctx)
-	defer log.End()
-	ch := make(chan error, 1)
-	go verifyWithChannel(log.Ctx(), ch, input, conf)
-	return ch
-}
-
-func verifyWithChannel(ctx context.Context, ch chan error, input string, conf *Config) {
-	log := sig.Start(ctx)
-	defer log.End()
-	defer close(ch)
 	email, err := mail.ParseAddress(input)
 	if err != nil {
 		log.Error(err)
-		ch <- err
-		return
+		return false, err
 	}
 	i := strings.LastIndex(email.Address, "@")
 	if i < 0 || i == len(email.Address)-1 {
 		log.Error(ErrInvalidSyntax)
-		ch <- ErrInvalidSyntax
-		return
+		return false, ErrInvalidSyntax
 	}
 	domain := email.Address[i+1:]
 	if conf.BlockDisposable {
@@ -149,29 +124,25 @@ func verifyWithChannel(ctx context.Context, ch chan error, input string, conf *C
 		mu.RUnlock()
 		if ok {
 			log.Error(ErrDisposableEmail)
-			ch <- ErrDisposableEmail
-			return
+			return false, ErrDisposableEmail
 		}
 	}
 	if conf.ValidateDNS {
-		_, err = net.LookupNS(domain)
+		_, err = resolver.LookupNS(ctx, domain)
 		if err != nil {
 			log.Error(err)
-			ch <- err
-			return
+			return false, err
 		}
 	}
 	if conf.ValidateMX || conf.ValidateSMTP {
-		records, err := net.LookupMX(domain)
+		records, err := resolver.LookupMX(ctx, domain)
 		if err != nil {
 			log.Error(err)
-			ch <- err
-			return
+			return false, err
 		}
 		if len(records) < 1 {
 			log.Error(ErrNoMXRecords)
-			ch <- ErrNoMXRecords
-			return
+			return false, ErrNoMXRecords
 		}
 		if conf.ValidateSMTP {
 			host := records[0].Host
@@ -184,25 +155,47 @@ func verifyWithChannel(ctx context.Context, ch chan error, input string, conf *C
 				host = record.Host
 			}
 			addr := fmt.Sprintf("%[1]s:%[2]d", host, smtpPort)
-			client, err := smtp.Dial(addr)
+			conn, err := dialer.DialContext(ctx, "tcp", addr)
 			if err != nil {
 				log.Error(err)
-				ch <- err
-				return
+				return false, err
 			}
-			defer client.Close()
+			defer conn.Close()
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				deadline = time.Now().Add(timeout)
+			}
+			err = conn.SetDeadline(deadline)
+			if err != nil {
+				log.Error(err)
+				return false, err
+			}
+			client, err := smtp.NewClient(conn, host)
+			if err != nil {
+				log.Error(err)
+				return false, err
+			}
+			defer func() {
+				err := client.Quit()
+				if err != nil {
+					log.Error(err)
+					err := client.Close()
+					if err != nil {
+						log.Error(err)
+					}
+				}
+			}()
 			err = client.Mail(fromEmail)
 			if err != nil {
 				log.Error(err)
-				ch <- err
-				return
+				return false, err
 			}
 			err = client.Rcpt(input)
 			if err != nil {
 				log.Error(err)
-				ch <- err
-				return
+				return false, err
 			}
 		}
 	}
+	return true, nil
 }

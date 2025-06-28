@@ -142,10 +142,10 @@ func TestVerifyDisposableEmails(t *testing.T) {
 		email  string
 		domain string
 	}{
-		{"001216.xyz", "test@001216.xyz", "001216.xyz"},
-		{"0039.ml", "test@0039.ml", "0039.ml"},
-		{"zoparel.com", "test@zoparel.com", "zoparel.com"},
-		{"zippymail.in", "test@zippymail.in", "zippymail.in"},
+		{"0mfs0mxufjpcfc.ga", "test@0mfs0mxufjpcfc.ga", "0mfs0mxufjpcfc.ga"},
+		{"11163.com", "test@11163.com", "11163.com"},
+		{"icarevn.com", "test@icarevn.com", "icarevn.com"},
+		{"thetrash.email", "test@thetrash.email", "thetrash.email"},
 	}
 
 	conf := &Config{
