@@ -2,7 +2,7 @@ module github.com/gokpm/go-email-verifier
 
 go 1.24.4
 
-require github.com/gokpm/go-sig v0.0.0-20250627184507-fd1d5b14c432
+require github.com/gokpm/go-sig v0.0.0-20250628142517-ce08b94e5a61
 
 require (
 	github.com/go-logr/logr v1.4.3 // indirect
