@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gokpm/go-sig"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -60,7 +61,7 @@ func getDisposableDomains() (map[string]struct{}, error) {
 		log.Error(err)
 		return nil, err
 	}
-	response, err := http.DefaultClient.Do(request)
+	response, err := otelhttp.DefaultClient.Do(request)
 	if err != nil {
 		log.Error(err)
 		return nil, err
