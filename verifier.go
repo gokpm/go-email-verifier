@@ -13,9 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/gokpm/go-sig"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -54,28 +51,22 @@ func init() {
 func getDisposableDomains() (map[string]struct{}, error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
 	defer cancel()
-	log := sig.Start(ctx)
-	defer log.End()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, disposableDomainsURL, nil)
 	if err != nil {
-		log.Error(err)
 		return nil, err
 	}
-	response, err := otelhttp.DefaultClient.Do(request)
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		log.Error(err)
 		return nil, err
 	}
 	defer response.Body.Close()
 	bytes, err := io.ReadAll(response.Body)
 	if err != nil {
-		log.Error(err)
 		return nil, err
 	}
 	domains := []string{}
 	err = json.Unmarshal(bytes, &domains)
 	if err != nil {
-		log.Error(err)
 		return nil, err
 	}
 	disposableDomains := map[string]struct{}{}
@@ -92,11 +83,8 @@ func loop() {
 }
 
 func refresh() error {
-	log := sig.Start(context.TODO())
-	defer log.End()
 	domains, err := getDisposableDomains()
 	if err != nil {
-		log.Error(err)
 		return err
 	}
 	mu.Lock()
@@ -106,16 +94,12 @@ func refresh() error {
 }
 
 func Verify(ctx context.Context, input string, conf *Config) (bool, error) {
-	log := sig.Start(ctx)
-	defer log.End()
 	email, err := mail.ParseAddress(input)
 	if err != nil {
-		log.Error(err)
 		return false, err
 	}
 	i := strings.LastIndex(email.Address, "@")
 	if i < 0 || i == len(email.Address)-1 {
-		log.Error(ErrInvalidSyntax)
 		return false, ErrInvalidSyntax
 	}
 	domain := email.Address[i+1:]
@@ -124,25 +108,21 @@ func Verify(ctx context.Context, input string, conf *Config) (bool, error) {
 		_, ok := disposableDomains[domain]
 		mu.RUnlock()
 		if ok {
-			log.Error(ErrDisposableEmail)
 			return false, ErrDisposableEmail
 		}
 	}
 	if conf.ValidateDNS {
 		_, err = resolver.LookupNS(ctx, domain)
 		if err != nil {
-			log.Error(err)
 			return false, err
 		}
 	}
 	if conf.ValidateMX || conf.ValidateSMTP {
 		records, err := resolver.LookupMX(ctx, domain)
 		if err != nil {
-			log.Error(err)
 			return false, err
 		}
 		if len(records) < 1 {
-			log.Error(ErrNoMXRecords)
 			return false, ErrNoMXRecords
 		}
 		if conf.ValidateSMTP {
@@ -158,7 +138,6 @@ func Verify(ctx context.Context, input string, conf *Config) (bool, error) {
 			addr := fmt.Sprintf("%[1]s:%[2]d", host, smtpPort)
 			conn, err := dialer.DialContext(ctx, "tcp", addr)
 			if err != nil {
-				log.Error(err)
 				return false, err
 			}
 			defer conn.Close()
@@ -168,32 +147,24 @@ func Verify(ctx context.Context, input string, conf *Config) (bool, error) {
 			}
 			err = conn.SetDeadline(deadline)
 			if err != nil {
-				log.Error(err)
 				return false, err
 			}
 			client, err := smtp.NewClient(conn, host)
 			if err != nil {
-				log.Error(err)
 				return false, err
 			}
 			defer func() {
 				err := client.Quit()
 				if err != nil {
-					log.Error(err)
-					err := client.Close()
-					if err != nil {
-						log.Error(err)
-					}
+					client.Close()
 				}
 			}()
 			err = client.Mail(fromEmail)
 			if err != nil {
-				log.Error(err)
 				return false, err
 			}
 			err = client.Rcpt(input)
 			if err != nil {
-				log.Error(err)
 				return false, err
 			}
 		}
